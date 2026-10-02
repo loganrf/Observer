@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include <wx/arrstr.h>
 #include <wx/string.h>
 
 #include "observation.h"
@@ -20,6 +21,11 @@ namespace observer {
  * New sightings are appended to the CSV so a power cut can at worst lose
  * the record being written. Edits and deletions rewrite the file through
  * a temporary copy, keeping the previous version as observations.csv.bak.
+ *
+ * The store never rewrites a file it could not read in full: rows it had
+ * to skip or columns it does not know would be lost. Such a log can still
+ * take new sightings while appending is safe; edits and deletions are
+ * refused with the reason until the file is fixed.
  */
 class ObservationStore {
 public:
@@ -31,6 +37,12 @@ public:
 
   /** Read the log. A missing file is an empty log, not an error. */
   bool Load(wxString* error);
+
+  /**
+   * What the last Load() could not read, for showing to the person, or ""
+   * if it read everything.
+   */
+  wxString LoadProblems() const;
 
   const std::vector<Observation>& All() const { return items_; }
   const Observation* Find(const wxString& id) const;
@@ -60,10 +72,15 @@ public:
 private:
   bool EnsureDir(wxString* error) const;
   bool WriteAll(wxString* error);
+  /** "" if rewriting the file loses nothing, else why it would. */
+  wxString RewriteBlocker() const;
 
   wxString dir_;
   std::vector<Observation> items_;
   bool header_current_ = true;  // CSV on disk uses today's columns
+  bool utf8_ = true;            // CSV on disk is UTF-8
+  int skipped_rows_ = 0;        // rows Load() could not read
+  wxArrayString unknown_columns_;
 };
 
 /** Make a file name safe on every platform: no separators or odd chars. */

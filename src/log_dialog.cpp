@@ -17,7 +17,7 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 
-#include "ocpn_plugin.h"
+#include "ocpn_api.h"
 
 #include "readout.h"
 #include "time_util.h"
@@ -152,13 +152,19 @@ void LogDialog::BuildUi(const Settings& settings) {
   wxArrayString categories = settings.categories;
   if (!obs_.category.empty() && categories.Index(obs_.category) == wxNOT_FOUND)
     categories.Add(obs_.category);
+  if (editing_ && obs_.category.empty()) {
+    // Editing must not quietly give a sighting a category it never had.
+    categories.Insert(_("Not stated"), 0);
+    no_category_index_ = 0;
+  }
   category_ = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                            categories);
   const wxString want = editing_ ? obs_.category
                                  : (obs_.category.empty()
                                         ? settings.last_category
                                         : obs_.category);
-  const int cat_index = categories.Index(want);
+  int cat_index = categories.Index(want);
+  if (no_category_index_ >= 0) cat_index = no_category_index_;
   category_->SetSelection(cat_index == wxNOT_FOUND ? 0 : cat_index);
   cat_row->Add(category_, 1, wxALIGN_CENTER_VERTICAL);
   cat_row->Add(brand::MakeLabel(this, _("Count")), 0,
@@ -221,6 +227,9 @@ void LogDialog::BuildUi(const Settings& settings) {
   wxArrayString confidences;
   confidences.Add(_("Not stated"));
   for (const wxString& c : Settings::Confidences()) confidences.Add(c);
+  if (!obs_.confidence.empty() &&
+      confidences.Index(obs_.confidence) == wxNOT_FOUND)
+    confidences.Add(obs_.confidence);  // typed by hand or another language
   confidence_ = new wxChoice(pane, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                              confidences);
   const int conf = confidences.Index(obs_.confidence);
@@ -424,8 +433,11 @@ void LogDialog::OnRemoveMedia(wxCommandEvent&) {
 
 bool LogDialog::Collect(wxString* error) {
   Observation o = obs_;
-  if (category_->GetSelection() != wxNOT_FOUND)
-    o.category = category_->GetString(category_->GetSelection());
+  const int cat = category_->GetSelection();
+  if (cat == no_category_index_)
+    o.category.clear();
+  else if (cat != wxNOT_FOUND)
+    o.category = category_->GetString(cat);
   o.species = species_->GetValue();
   o.species.Trim(true).Trim(false);
   o.count = count_->GetValue();

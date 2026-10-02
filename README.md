@@ -50,7 +50,7 @@ https://github.com/loganrf/Observer/releases/latest/download/ocpn-plugins.xml
 | Debian 13, arm64 | `debian-arm64` 13 | Raspberry Pi OS 13 (64-bit) |
 | Flatpak, x86_64 and aarch64 | `flatpak-*` for the Flathub runtime | any Linux with the OpenCPN Flatpak |
 | Windows, 32-bit | `msvc-wx32` | the standard OpenCPN Windows installer |
-| macOS 11 and later | `darwin-wx32`, universal | Intel and Apple silicon |
+| macOS 10.13 and later | `darwin-wx32`, universal | Intel and Apple silicon |
 
 Not built yet: Android, 32-bit Raspberry Pi OS, and the 64-bit Windows build of OpenCPN (the shared OpenCPN plugin libraries ship only a 32-bit Windows import library).
 
@@ -92,6 +92,8 @@ Observer/
 ```
 
 New sightings are appended, so a power cut costs at most the row being written. Edits and deletions rewrite the file through a temporary copy. The CSV is UTF-8 with a byte order mark, which spreadsheet programs need to read accented species names correctly.
+
+You can edit the file by hand or in a spreadsheet. Observer never rewrites a log it could not read in full: if a row or a column is one it does not understand, the sightings log says so, new sightings are still appended, and edits and deletions are refused until the file is fixed. A file saved in the Windows "CSV" encoding is read as such and converted to UTF-8 on the next save, with the original kept as `observations.csv.before-<date>`.
 
 Columns, in order. New columns are only ever added at the end, and Observer reads files from older and newer versions by column name:
 

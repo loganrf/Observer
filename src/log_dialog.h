@@ -7,6 +7,7 @@
 
 #include <functional>
 
+#include <wx/collpane.h>  // a macro for the generic class on some ports
 #include <wx/dialog.h>
 
 #include "brand.h"
@@ -16,7 +17,6 @@
 
 class wxButton;
 class wxChoice;
-class wxCollapsiblePane;
 class wxComboBox;
 class wxSpinCtrl;
 class wxStaticText;
@@ -95,6 +95,7 @@ private:
   StatusIndicator* status_ = nullptr;
 
   wxChoice* category_ = nullptr;
+  int no_category_index_ = -1;  // "Not stated", when editing a bare record
   wxComboBox* species_ = nullptr;
   wxSpinCtrl* count_ = nullptr;
   wxTextCtrl* description_ = nullptr;

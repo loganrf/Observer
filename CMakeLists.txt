@@ -94,6 +94,7 @@ add_library(
   ${PACKAGE_NAME} SHARED
   src/observer_pi.cpp
   src/observer_pi.h
+  src/ocpn_api.h
   src/brand.cpp
   src/brand.h
   src/chart_marks.cpp

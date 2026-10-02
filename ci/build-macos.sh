@@ -16,7 +16,8 @@ set -euo pipefail
 
 wx_version=3.2.6
 wx_prefix=${WX_PREFIX:-$HOME/wx-universal}
-export MACOSX_DEPLOYMENT_TARGET=11.0
+# OpenCPN 5.8 still ran on macOS 10.13; arm64 code needs 11 regardless.
+export MACOSX_DEPLOYMENT_TARGET=10.13
 jobs=$(sysctl -n hw.ncpu)
 
 if [[ ! -x $wx_prefix/bin/wx-config ]]; then
@@ -48,7 +49,7 @@ cmake -S . -B "$build" \
   -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET \
   -DwxWidgets_CONFIG_EXECUTABLE="$wx_prefix/bin/wx-config" \
-  -DOCPN_TARGET_TUPLE="darwin-wx32;11;universal" \
+  -DOCPN_TARGET_TUPLE="darwin-wx32;10.13;universal" \
   -DOBSERVER_VERSION="$VERSION" \
   -DOBSERVER_TARBALL_BASE_URL="${BASE_URL:-}"
 cmake --build "$build" --parallel "$jobs"

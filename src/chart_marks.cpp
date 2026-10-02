@@ -10,7 +10,7 @@
 #include <wx/filename.h>
 #include <wx/listimpl.cpp>
 
-#include "ocpn_plugin.h"
+#include "ocpn_api.h"
 
 #include "export.h"
 #include "geo.h"

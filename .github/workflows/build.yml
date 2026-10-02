@@ -163,7 +163,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/wx-universal
-          key: wx-universal-3.2.6-macos11-v1
+          key: wx-universal-3.2.6-macos10.13-v1
       - name: Build
         env:
           VERSION: ${{ inputs.version }}

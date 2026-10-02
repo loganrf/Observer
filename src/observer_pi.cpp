@@ -144,9 +144,12 @@ void ObserverPlugin::LateInit() {
 }
 
 bool ObserverPlugin::DeInit() {
+  // Delete now, not with Destroy(): OpenCPN unloads the library straight
+  // after DeInit, before wx would get round to a deferred deletion.
   if (list_) {
-    list_->Destroy();
+    ListDialog* list = list_.get();
     list_ = nullptr;
+    delete list;
   }
   marks_.Clear();
   if (tool_id_ >= 0) RemovePlugInTool(tool_id_);
@@ -162,6 +165,9 @@ void ObserverPlugin::OpenStore() {
   wxString error;
   if (!store_->Load(&error)) {
     wxLogWarning("Observer: %s", error);
+  } else if (!store_->LoadProblems().empty()) {
+    wxLogWarning("Observer: %s: %s", store_->LogPath(),
+                 store_->LoadProblems());
   }
 }
 
@@ -206,9 +212,13 @@ Observation ObserverPlugin::Capture(bool at_cursor) {
   const double mono = MonotonicSeconds();
 
   // Prefer GNSS time when the computer clock disagrees with it, as it
-  // often does on a boat far from a network.
+  // often does on a boat far from a network. A GNSS date before this
+  // release's year is wrong (a receiver hit by the week-number rollover,
+  // or a replayed recording), so it is not trusted.
+  const int64_t earliest = UtcToEpoch(PLUGIN_VERSION_MAJOR, 1, 1, 0, 0, 0);
   int64_t offset = 0;
-  if (nmea_.ClockOffset(mono, kMaxClockAgeS, &offset)) {
+  if (nmea_.ClockOffset(mono, kMaxClockAgeS, &offset) &&
+      now + offset >= earliest) {
     o.utc = std::llabs(offset) >= 2 ? now + offset : now;
     o.time_source = "gnss";
   } else {
@@ -392,7 +402,9 @@ void ObserverPlugin::ShowOnChart(const wxString& id) {
 
 void ObserverPlugin::ShowLog() {
   if (!list_) {
-    list_ = new ListDialog(Parent(), this);
+    // The primary canvas lives as long as OpenCPN; other canvases are
+    // destroyed, with their child windows, when the layout changes.
+    list_ = new ListDialog(GetOCPNCanvasWindow(), this);
   } else {
     list_->Reload();
     list_->ApplyTheme();

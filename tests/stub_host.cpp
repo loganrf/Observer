@@ -39,6 +39,8 @@
 #include <wx/timer.h>
 #include <wx/utils.h>
 
+#include <cstdint>
+
 #include "ocpn_plugin.h"
 
 // ---- Host state -----------------------------------------------------------

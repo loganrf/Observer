@@ -13,7 +13,7 @@
 #include <wx/textctrl.h>
 #include <wx/tokenzr.h>
 
-#include "ocpn_plugin.h"
+#include "ocpn_api.h"
 
 #include "config.h"
 

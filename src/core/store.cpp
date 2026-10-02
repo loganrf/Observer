@@ -5,10 +5,13 @@
 #include "store.h"
 
 #include <algorithm>
+#include <string>
 
+#include <wx/datetime.h>
 #include <wx/ffile.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
+#include <wx/strconv.h>
 
 namespace observer {
 
@@ -17,15 +20,36 @@ namespace {
 const char* kLogName = "observations.csv";
 const char* kMediaDirName = "media";
 
-bool ReadUtf8(const wxString& path, wxString* text, wxString* error) {
+/**
+ * Read a text file. UTF-8 is expected; anything else is read as Windows
+ * code page 1252 (what spreadsheet programs on Windows save as "CSV"),
+ * which can decode any byte, and *utf8 is cleared.
+ */
+bool ReadText(const wxString& path, wxString* text, bool* utf8,
+              wxString* error) {
   wxFFile f;
   if (!f.Open(path, "rb")) {
     *error = wxString::Format("Cannot open %s", path);
     return false;
   }
-  if (!f.ReadAll(text, wxConvUTF8)) {
-    *error = wxString::Format("Cannot read %s as UTF-8", path);
+  const wxFileOffset len = f.Length();
+  if (len < 0) {
+    *error = wxString::Format("Cannot read %s", path);
     return false;
+  }
+  std::string bytes(static_cast<size_t>(len), '\0');
+  if (len > 0 && f.Read(&bytes[0], bytes.size()) != bytes.size()) {
+    *error = wxString::Format("Cannot read %s", path);
+    return false;
+  }
+  *utf8 = true;
+  *text = wxString::FromUTF8(bytes.data(), bytes.size());
+  if (text->empty() && !bytes.empty()) {
+    *utf8 = false;
+    *text = wxString(bytes.data(), wxCSConv(wxFONTENCODING_CP1252),
+                     bytes.size());
+    if (text->empty())
+      *text = wxString(bytes.data(), wxConvISO8859_1, bytes.size());
   }
   return true;
 }
@@ -90,26 +114,72 @@ bool ObservationStore::EnsureDir(wxString* error) const {
 bool ObservationStore::Load(wxString* error) {
   items_.clear();
   header_current_ = true;
+  utf8_ = true;
+  skipped_rows_ = 0;
+  unknown_columns_.clear();
   const wxString path = LogPath();
   if (!wxFileName::FileExists(path)) return true;
 
   wxString text;
-  if (!ReadUtf8(path, &text, error)) return false;
+  if (!ReadText(path, &text, &utf8_, error)) return false;
   const std::vector<CsvRow> rows = CsvParse(text);
-  if (rows.empty()) return true;
+  if (rows.empty()) {
+    header_current_ = false;  // an empty file needs its header written
+    return true;
+  }
 
   const CsvRow& header = rows[0];
   if (std::find(header.begin(), header.end(), "id") == header.end()) {
+    // Not a log this version can read at all; refuse to touch it.
+    header_current_ = false;
+    skipped_rows_ = static_cast<int>(rows.size());
     *error = wxString::Format("%s has no header row", path);
     return false;
   }
   header_current_ = header == ObservationColumns();
+  const CsvRow& known = ObservationColumns();
+  for (const wxString& column : header) {
+    if (std::find(known.begin(), known.end(), column) == known.end() &&
+        unknown_columns_.Index(column) == wxNOT_FOUND)
+      unknown_columns_.Add(column);
+  }
   for (size_t i = 1; i < rows.size(); ++i) {
     Observation obs;
-    if (ObservationFromRow(header, rows[i], &obs) && !Find(obs.id))
-      items_.push_back(obs);
+    if (rows[i].size() > header.size() ||
+        !ObservationFromRow(header, rows[i], &obs) || Find(obs.id)) {
+      ++skipped_rows_;
+      continue;
+    }
+    items_.push_back(obs);
   }
   return true;
+}
+
+wxString ObservationStore::LoadProblems() const {
+  wxString out;
+  if (skipped_rows_ > 0)
+    out = wxString::Format("%d rows could not be read", skipped_rows_);
+  if (!unknown_columns_.empty()) {
+    if (!out.empty()) out += "; ";
+    out += "unknown columns: " + wxJoin(unknown_columns_, ',', '\0');
+  }
+  if (!utf8_) {
+    if (!out.empty()) out += "; ";
+    out += "not UTF-8, read as Windows-1252";
+  }
+  return out;
+}
+
+wxString ObservationStore::RewriteBlocker() const {
+  if (skipped_rows_ == 0 && unknown_columns_.empty()) return wxString();
+  return wxString::Format(
+      "%s has %s. Observer will not rewrite it and lose them; fix the file "
+      "or move it out of the log folder.",
+      LogPath(),
+      skipped_rows_ > 0
+          ? wxString::Format("%d rows it cannot read", skipped_rows_)
+          : "columns it does not know (" +
+                wxJoin(unknown_columns_, ',', '\0') + ")");
 }
 
 const Observation* ObservationStore::Find(const wxString& id) const {
@@ -128,7 +198,20 @@ bool ObservationStore::Add(const Observation& obs, wxString* error) {
   items_.push_back(obs);
 
   const wxString path = LogPath();
-  if (!header_current_ || !wxFileName::FileExists(path)) {
+  const bool exists = wxFileName::FileExists(path);
+  if (!exists || !header_current_ || !utf8_) {
+    // A new file, or one in an older format that has to be rewritten.
+    const wxString blocker = exists ? RewriteBlocker() : wxString();
+    if (!blocker.empty()) {
+      *error = blocker;
+      items_.pop_back();
+      return false;
+    }
+    if (exists && (!header_current_ || !utf8_)) {
+      // Keep the file as it was before converting it.
+      const wxString stamp = wxDateTime::Now().Format("%Y%m%d-%H%M%S");
+      wxCopyFile(path, path + ".before-" + stamp, false);
+    }
     if (WriteAll(error)) return true;
     items_.pop_back();
     return false;
@@ -147,6 +230,11 @@ bool ObservationStore::Add(const Observation& obs, wxString* error) {
 }
 
 bool ObservationStore::Update(const Observation& obs, wxString* error) {
+  const wxString blocker = RewriteBlocker();
+  if (!blocker.empty()) {
+    *error = blocker;
+    return false;
+  }
   auto it = std::find_if(items_.begin(), items_.end(),
                          [&](const Observation& o) { return o.id == obs.id; });
   if (it == items_.end()) {
@@ -161,6 +249,11 @@ bool ObservationStore::Update(const Observation& obs, wxString* error) {
 }
 
 bool ObservationStore::Remove(const wxString& id, wxString* error) {
+  const wxString blocker = RewriteBlocker();
+  if (!blocker.empty()) {
+    *error = blocker;
+    return false;
+  }
   auto it = std::find_if(items_.begin(), items_.end(),
                          [&](const Observation& o) { return o.id == id; });
   if (it == items_.end()) {
@@ -196,6 +289,7 @@ bool ObservationStore::WriteAll(wxString* error) {
     return false;
   }
   header_current_ = true;
+  utf8_ = true;
   return true;
 }
 

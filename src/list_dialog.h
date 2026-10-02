@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <wx/dialog.h>
+#include <wx/srchctrl.h>
 
 #include "brand.h"
 #include "observation.h"
@@ -15,7 +16,6 @@
 class wxButton;
 class wxListCtrl;
 class wxListEvent;
-class wxSearchCtrl;
 class wxStaticText;
 
 namespace observer {

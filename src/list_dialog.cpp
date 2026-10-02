@@ -17,7 +17,7 @@
 #include <wx/stattext.h>
 #include <wx/utils.h>
 
-#include "ocpn_plugin.h"
+#include "ocpn_api.h"
 
 #include "config.h"
 #include "export.h"
@@ -171,8 +171,11 @@ void ListDialog::Reload() {
   const wxString count =
       shown == total ? wxString::Format(_("%d sightings"), total)
                      : wxString::Format(_("%d of %d sightings"), shown, total);
-  summary_->SetLabel(count.Upper() + wxString(L" \u00B7 ") +
-                     controller_->Store().LogPath());
+  wxString summary = count.Upper() + wxString(L" \u00B7 ") +
+                     controller_->Store().LogPath();
+  const wxString problems = controller_->Store().LoadProblems();
+  if (!problems.empty()) summary += wxString(L" \u00B7 ") + problems;
+  summary_->SetLabel(summary);
   UpdateButtons();
 }
 
@@ -255,22 +258,24 @@ void ListDialog::OnExport(wxCommandEvent& event) {
     case kExportCsv:
       text = ExportCsv(rows, resolve);
       ext = "csv";
-      wildcard = "CSV (*.csv)|*.csv";
+      wildcard = "*.csv";
       break;
     case kExportGeoJson:
       text = ExportGeoJson(rows, resolve);
       ext = "geojson";
-      wildcard = "GeoJSON (*.geojson)|*.geojson";
+      wildcard = "*.geojson";
       break;
     case kExportGpx:
       text = ExportGpx(rows, resolve, wxString("Observer ") + PLUGIN_VERSION);
       ext = "gpx";
-      wildcard = "GPX (*.gpx)|*.gpx";
+      wildcard = "*.gpx";
       break;
     default:
       return;
   }
 
+  // A bare pattern, as OpenCPN's own exports pass: its file selector adds
+  // the description itself for some types.
   wxString path;
   const wxString suggested = "sightings." + ext;
   if (PlatformFileSelectorDialog(this, &path, _("Export sightings"),
@@ -278,6 +283,12 @@ void ListDialog::OnExport(wxCommandEvent& event) {
       path.empty())
     return;
   if (wxFileName(path).GetExt().empty()) path += "." + ext;
+  if (wxFileName::FileExists(path) &&
+      OCPNMessageBox_PlugIn(
+          this, wxString::Format(_("Replace the existing %s?"), path),
+          _("Observer"), wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION) !=
+          wxID_YES)
+    return;
 
   wxFFile f;
   if (!f.Open(path, "wb") || !f.Write(text, wxConvUTF8) || !f.Close()) {

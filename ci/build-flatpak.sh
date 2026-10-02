@@ -35,12 +35,18 @@ runtime_of() {
   flatpak remote-info --user "$1" "$app//$2" |
     awk -F': *' '/^ *Sdk:/ {print $2}' | awk -F/ '{print $NF}'
 }
-sdk=$(runtime_of "$remote" "$branch")
+sdk=$(runtime_of "$remote" "$branch" || true)
 if [[ -z $sdk ]]; then
+  if [[ $branch == beta ]]; then
+    # No beta on Flathub right now: nothing to build, and no reason to
+    # hold up a release.
+    echo "No $app//beta on $remote; nothing to build."
+    exit 0
+  fi
   echo "Cannot find $app//$branch on $remote" >&2
   exit 1
 fi
-if [[ $branch == beta && $sdk == "$(runtime_of flathub stable)" ]]; then
+if [[ $branch == beta && $sdk == "$(runtime_of flathub stable || true)" ]]; then
   echo "OpenCPN beta uses the stable runtime ($sdk); nothing more to build."
   exit 0
 fi

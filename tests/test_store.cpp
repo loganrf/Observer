@@ -175,3 +175,83 @@ TEST(store_sanitize_file_name) {
   CHECK_EQ(SanitizeFileName("..hidden"), "hidden");
   CHECK_EQ(SanitizeFileName(""), "media");
 }
+
+TEST(store_reads_windows_1252_and_converts_to_utf8) {
+  TempDir dir;
+  ObservationStore store(dir.Path());
+  // "Fou de Bassan é" saved by a spreadsheet as Windows-1252, not UTF-8.
+  {
+    wxFFile f(store.LogPath(), "wb");
+    const char text[] =
+        "id,utc_time,species\r\nold-1,2026-09-01T10:00:00Z,Fou de Bassan \xE9\r\n";
+    f.Write(text, sizeof(text) - 1);
+  }
+  wxString error;
+  CHECK(store.Load(&error));
+  CHECK_EQ(store.All().size(), 1u);
+  CHECK_EQ(store.All()[0].species, wxString::FromUTF8("Fou de Bassan \xC3\xA9"));
+  CHECK(store.LoadProblems().Contains("UTF-8"));
+
+  // Adding converts the whole file to UTF-8 and keeps the original.
+  CHECK(store.Add(Make(1790949807, "Orca"), &error));
+  ObservationStore reread(dir.Path());
+  CHECK(reread.Load(&error));
+  CHECK_EQ(reread.All().size(), 2u);
+  CHECK_EQ(reread.All()[0].species,
+           wxString::FromUTF8("Fou de Bassan \xC3\xA9"));
+  CHECK(reread.LoadProblems().empty());
+  wxArrayString kept;
+  wxDir::GetAllFiles(dir.Path(), &kept, "observations.csv.before-*");
+  CHECK_EQ(kept.size(), 1u);
+}
+
+TEST(store_refuses_rewrites_that_would_drop_rows) {
+  TempDir dir;
+  ObservationStore store(dir.Path());
+  wxString error;
+  CHECK(store.Add(Make(1790949807, "Orca"), &error));
+  // A hand edit leaves one row with a time Observer cannot read.
+  wxString text = ReadText(store.LogPath());
+  text += "bad-1,1 Oct 2026,,,,,,,,,,,Seal\r\n";
+  WriteText(store.LogPath(), text);
+
+  ObservationStore again(dir.Path());
+  CHECK(again.Load(&error));
+  CHECK_EQ(again.All().size(), 1u);
+  CHECK(again.LoadProblems().Contains("1 rows"));
+  Observation edited = again.All()[0];
+  edited.species = "Orca pod";
+  CHECK(!again.Update(edited, &error));
+  CHECK(error.Contains("will not rewrite"));
+  CHECK(!again.Remove(edited.id, &error));
+  // Appending loses nothing, so new sightings are still accepted.
+  CHECK(again.Add(Make(1790949907, "Minke"), &error));
+  CHECK(ReadText(again.LogPath()).Contains("bad-1,1 Oct 2026"));
+}
+
+TEST(store_refuses_rewrites_that_would_drop_columns) {
+  TempDir dir;
+  ObservationStore store(dir.Path());
+  WriteText(store.LogPath(),
+            "id,utc_time,species,my_notes\r\n"
+            "a,2026-09-01T10:00:00Z,Seal,keep me\r\n");
+  wxString error;
+  CHECK(store.Load(&error));
+  CHECK(store.LoadProblems().Contains("my_notes"));
+  // The header is not current, so adding needs a rewrite: refused.
+  CHECK(!store.Add(Make(1790949807, "Orca"), &error));
+  CHECK(ReadText(store.LogPath()).Contains("keep me"));
+  CHECK_EQ(store.All().size(), 1u);
+}
+
+TEST(store_empty_file_gets_a_header) {
+  TempDir dir;
+  ObservationStore store(dir.Path());
+  WriteText(store.LogPath(), "");
+  wxString error;
+  CHECK(store.Load(&error));
+  CHECK(store.Add(Make(1790949807, "Orca"), &error));
+  ObservationStore reread(dir.Path());
+  CHECK(reread.Load(&error));
+  CHECK_EQ(reread.All().size(), 1u);
+}

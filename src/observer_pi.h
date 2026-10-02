@@ -11,8 +11,9 @@
 
 #include <wx/bitmap.h>
 #include <wx/string.h>
+#include <wx/weakref.h>
 
-#include "ocpn_plugin.h"
+#include "ocpn_api.h"
 
 #include "brand.h"
 #include "chart_marks.h"
@@ -87,7 +88,8 @@ private:
   std::unique_ptr<ObservationStore> store_;
   ChartMarks marks_;
   NmeaTracker nmea_;
-  ListDialog* list_ = nullptr;
+  // Cleared by wx if the dialog goes away with its parent.
+  wxWeakRef<ListDialog> list_;
 
   int tool_id_ = -1;
   int menu_log_here_ = -1;
