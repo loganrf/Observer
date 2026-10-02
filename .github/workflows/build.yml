@@ -1,0 +1,176 @@
+# Build, test and package the plugin for every OpenCPN platform.
+# Called by ci.yml for branches and pull requests, and by release.yml.
+
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Plugin version, YYYY.M.N with optional pre-release
+        required: true
+        type: string
+      tarball_base_url:
+        description: URL the release will host the tarballs under
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Debian 12 builds also serve Ubuntu 23.04-24.04 and
+          # Raspberry Pi OS 12; Debian 13 builds serve Ubuntu 26.04.
+          - name: debian-12-x86_64
+            runner: ubuntu-24.04
+            image: debian:bookworm
+            platform: linux/amd64
+            tuple: debian-x86_64;12;x86_64
+          - name: debian-13-x86_64
+            runner: ubuntu-24.04
+            image: debian:trixie
+            platform: linux/amd64
+            tuple: debian-x86_64;13;x86_64
+          - name: debian-12-arm64
+            runner: ubuntu-24.04-arm
+            image: debian:bookworm
+            platform: linux/arm64
+            tuple: debian-arm64;12;arm64
+          - name: debian-13-arm64
+            runner: ubuntu-24.04-arm
+            image: debian:trixie
+            platform: linux/arm64
+            tuple: debian-arm64;13;arm64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Build in ${{ matrix.image }}
+        env:
+          TUPLE: ${{ matrix.tuple }}
+          VERSION: ${{ inputs.version }}
+          BASE_URL: ${{ inputs.tarball_base_url }}
+        run: >
+          docker run --rm --platform ${{ matrix.platform }}
+          -v "$PWD:/src" -w /src
+          -e TUPLE -e VERSION -e BASE_URL
+          ${{ matrix.image }} bash ci/build-linux.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plugin-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  flatpak:
+    name: flatpak-${{ matrix.arch }}-${{ matrix.branch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04, branch: stable }
+          - { arch: x86_64, runner: ubuntu-24.04, branch: beta }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, branch: stable }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, branch: beta }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Build Flatpak extension
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE_URL: ${{ inputs.tarball_base_url }}
+        run: ci/build-flatpak.sh ${{ matrix.branch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plugin-flatpak-${{ matrix.arch }}-${{ matrix.branch }}
+          path: dist/*
+          # Beta produces nothing when it shares the stable runtime.
+          if-no-files-found: ignore
+
+  windows:
+    name: windows-x86
+    runs-on: windows-2022
+    env:
+      WX_VERSION: 3.2.6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Cache wxWidgets
+        id: wx-cache
+        uses: actions/cache@v6
+        with:
+          path: wxWidgets
+          key: wxWidgets-${{ env.WX_VERSION }}-vc14x-x86
+      - name: Download wxWidgets
+        if: steps.wx-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          base=https://github.com/wxWidgets/wxWidgets/releases/download/v$WX_VERSION
+          for f in wxWidgets-$WX_VERSION-headers.7z \
+                   wxMSW-${WX_VERSION}_vc14x_ReleaseDLL.7z \
+                   wxMSW-${WX_VERSION}_vc14x_Dev.7z; do
+            curl -fsSL -o "$f" "$base/$f"
+            7z x -y -owxWidgets "$f" >/dev/null
+          done
+          mv wxWidgets/lib/vc14x_dll wxWidgets/lib/vc_dll
+      - name: Configure
+        shell: bash
+        run: >
+          cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
+          -DwxWidgets_ROOT_DIR="$PWD/wxWidgets"
+          -DwxWidgets_LIB_DIR="$PWD/wxWidgets/lib/vc_dll"
+          "-DOCPN_TARGET_TUPLE=msvc-wx32;10;x86"
+          "-DOBSERVER_VERSION=${{ inputs.version }}"
+          "-DOBSERVER_TARBALL_BASE_URL=${{ inputs.tarball_base_url }}"
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        shell: bash
+        run: |
+          export PATH="$PWD/wxWidgets/lib/vc_dll:$PATH"
+          ctest --test-dir build -C Release --output-on-failure
+      - name: Package
+        shell: bash
+        run: |
+          cmake --build build --config Release --target tarball
+          mkdir -p dist
+          cp build/*.tar.gz build/*.xml dist/
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plugin-windows-x86
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    name: macos-universal
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Cache wxWidgets
+        uses: actions/cache@v6
+        with:
+          path: ~/wx-universal
+          key: wx-universal-3.2.6-macos11-v1
+      - name: Build
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE_URL: ${{ inputs.tarball_base_url }}
+        run: ci/build-macos.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plugin-macos-universal
+          path: dist/*
+          if-no-files-found: error

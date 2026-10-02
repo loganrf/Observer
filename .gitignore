@@ -1,0 +1,12 @@
+# Build trees and packaging output
+/build/
+/build-*/
+/dist/
+/.flatpak-builder/
+/wxWidgets/
+
+# Editors and systems
+.vscode/
+.idea/
+*.user
+.DS_Store
