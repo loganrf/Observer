@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#b04a1c" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4">
+  <title>Observer: log a sighting</title>
+  <circle cx="7" cy="15" r="4"/>
+  <circle cx="17" cy="15" r="4"/>
+  <path d="M11 15H13"/>
+  <path d="M4.5 11.9V6H9.5V11.9"/>
+  <path d="M14.5 11.9V6H19.5V11.9"/>
+  <path d="M9.5 8H14.5"/>
+</svg>

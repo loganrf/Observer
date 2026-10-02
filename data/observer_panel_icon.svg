@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <title>Observer</title>
+  <rect width="48" height="48" fill="#d65d2a"/>
+  <g transform="translate(8 8) scale(1.3333)" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4">
+    <circle cx="7" cy="15" r="4"/>
+    <circle cx="17" cy="15" r="4"/>
+    <path d="M11 15H13"/>
+    <path d="M4.5 11.9V6H9.5V11.9"/>
+    <path d="M14.5 11.9V6H19.5V11.9"/>
+    <path d="M9.5 8H14.5"/>
+  </g>
+</svg>

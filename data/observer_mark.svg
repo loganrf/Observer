@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke-linecap="butt" stroke-linejoin="miter">
+  <title>Wildlife sighting</title>
+  <circle cx="12" cy="12" r="8.5" stroke="#f6f3ee" stroke-width="4"/>
+  <circle cx="12" cy="12" r="8.5" stroke="#1e4e5c" stroke-width="2"/>
+  <circle cx="12" cy="12" r="7.5" fill="#f6f3ee" fill-opacity="0.85"/>
+  <circle cx="9.25" cy="13" r="2.25" stroke="#1e4e5c" stroke-width="1.5"/>
+  <circle cx="14.75" cy="13" r="2.25" stroke="#1e4e5c" stroke-width="1.5"/>
+  <path d="M8 11.1V8.5H10.5V11.1M13.5 11.1V8.5H16V11.1M10.5 9.5H13.5" stroke="#1e4e5c" stroke-width="1.5"/>
+</svg>

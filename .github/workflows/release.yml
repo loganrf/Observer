@@ -1,0 +1,116 @@
+# Release every change that lands on main.
+#
+# Versions follow the calendar: YYYY.M.N, where N counts this month's
+# earlier releases from 0 (2026.9.0, 2026.9.1, then 2026.10.0). The tag
+# vYYYY.M.N and the GitHub release are created only after every platform
+# builds, so a failed run never uses up a version number.
+#
+# Commits touching only documentation do not release; add [skip ci] to a
+# commit message to hold any other change back.
+
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One release at a time, so two runs never claim the same number.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      skip: ${{ steps.version.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Test the version script
+        run: ci/test-calver.sh
+      - id: version
+        name: Next version
+        run: |
+          existing=$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' | head -1)
+          if [[ -n $existing ]]; then
+            echo "HEAD is already released as $existing"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "version=${existing#v}" >> "$GITHUB_OUTPUT"
+          else
+            version=$(ci/calver.sh)
+            echo "Releasing $version"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: version
+    if: needs.version.outputs.skip != 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      tarball_base_url: https://github.com/${{ github.repository }}/releases/download/v${{ needs.version.outputs.version }}
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: plugin-*
+          merge-multiple: true
+          path: dist
+      - name: Build the plugin catalog
+        run: ci/make-catalog.py dist "$VERSION"
+      - name: Write release notes
+        run: |
+          repo="https://github.com/${{ github.repository }}"
+          {
+            echo "## Install"
+            echo
+            echo "In OpenCPN, open **Options > Plugins**, choose **Import plugin...** and pick the tarball for your system below. Then enable Observer in the plugin list."
+            echo
+            echo "To get updates through OpenCPN's plugin manager, add this as a custom catalog:"
+            echo
+            echo "    $repo/releases/latest/download/ocpn-plugins.xml"
+            echo
+            echo "| System | File |"
+            echo "| --- | --- |"
+            for f in dist/*.tar.gz; do
+              name=$(basename "$f")
+              target=$(sed -n 's:.*<target>\(.*\)</target>.*:\1:p' "${f%.tar.gz}.xml")
+              tver=$(sed -n 's:.*<target-version>\(.*\)</target-version>.*:\1:p' "${f%.tar.gz}.xml")
+              echo "| $target $tver | [$name]($repo/releases/download/v$VERSION/$name) |"
+            done
+            echo
+          } > notes.md
+          cat notes.md
+      - name: Tag and publish
+        run: |
+          gh release create "v$VERSION" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "Observer $VERSION" \
+            --notes-file notes.md \
+            --generate-notes

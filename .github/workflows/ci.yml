@@ -1,0 +1,40 @@
+# Build and test every branch and pull request. Artifacts carry a
+# pre-release version, YYYY.M.N-ci.<run>, so they never outrank a release.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main  # release.yml builds main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Test the version script
+        run: ci/test-calver.sh
+      - id: version
+        name: Next version
+        run: echo "version=$(ci/calver.sh)-ci.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
